@@ -1,0 +1,10 @@
+
+#include <zephyr/dt-bindings/input/input-event-codes.h>
+
+/ {
+    /omit-if-no-ref/ zip_report_rate_limit: zip_report_rate_limit {
+        compatible = "zmk,input-processor-report-rate-limit";
+        #input-processor-cells = <0>;
+        report-ms = <8>;
+    };
+};

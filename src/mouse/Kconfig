@@ -1,0 +1,11 @@
+# Copyright (c) 2023 The ZMK Contributors
+# SPDX-License-Identifier: MIT
+
+if ZMK_POINTING
+
+config ZMK_INPUT_PROCESSOR_REPORT_RATE_LIMIT
+    bool "Report Rate Limit Input Processor"
+    default y
+    depends on DT_HAS_ZMK_INPUT_PROCESSOR_REPORT_RATE_LIMIT_ENABLED
+
+endif
