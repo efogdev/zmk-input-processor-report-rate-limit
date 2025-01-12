@@ -48,11 +48,9 @@ Roughly, `overlay` of the split-peripheral trackball should look like below.
 
 /* add rate limit processor on peripheral(s) overlay */
 #include <input/processors/report_rate_limit.dtsi>
-&zip_report_rate_limit {
-	report-ms = <12>; // reduce the report rate to 12ms, default is 8ms
-};
+
 &trackball_split {
   device = <&trackball>;
-  input-processors = <&zip_report_rate_limit>;
+  input-processors = <&zip_report_rate_limit 12>; // limit to 12ms, default is 8ms
 };
 ```

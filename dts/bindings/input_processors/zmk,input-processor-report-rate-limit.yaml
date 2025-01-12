@@ -5,10 +5,11 @@ description: Input Processor for reduceing the rate of input reports
 
 compatible: "zmk,input-processor-report-rate-limit"
 
-include: ip_zero_param.yaml
+include: ip_one_param.yaml
 
 properties:
-  report-ms:
+  type:
     type: int
+  codes:
+    type: array
     required: true
-    default: 8

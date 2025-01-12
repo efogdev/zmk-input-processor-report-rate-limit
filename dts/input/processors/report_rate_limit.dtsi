@@ -4,7 +4,8 @@
 / {
     /omit-if-no-ref/ zip_report_rate_limit: zip_report_rate_limit {
         compatible = "zmk,input-processor-report-rate-limit";
-        #input-processor-cells = <0>;
-        report-ms = <8>;
+        #input-processor-cells = <1>;
+        type = <INPUT_EV_REL>;
+        codes = <INPUT_REL_X INPUT_REL_Y>;
     };
 };
