@@ -1,14 +1,14 @@
 # Report Rate Limit Input Processor
 
-This module is used to limit the rate of input event sync from Zephyr input subsystem for ZMK. It is made for pointing device on split peripheral, to reduce the bluetooth connection loading between the peripherals and the central.
+This module is used to limit the rate of input reports that raised from pointing device on split peripheral, to reduce the bluetooth connection loading between the peripherals and the central.
 
 ## What it does
 
-It reduces all reporting input value and sync flag to zero and sum up the x/y delta, if report rate is too high (<8ms). The summarized value will be added up on next report event.
+It reduces all reporting input value and sync flag to zero and proxying x/y delta while the input event rate is too high for each input code (<8ms). The summarized value will be added up on next report event. While the pointing device report a continuoues movement on an axis (with same input code), the value would be accumulated and report later.
 
 ## Installation
 
-Include this modulr on your ZMK's west manifest in `config/west.yml`:
+Include this module on your ZMK's west manifest in `config/west.yml`:
 
 ```yaml
 manifest:
@@ -32,7 +32,7 @@ manifest:
 Roughly, `overlay` of the split-peripheral trackball should look like below.
 
 ```
-/* common split inputs node on central and peripheral(s) */
+/* Typical common split inputs node on central and peripheral(s) */
 /{
   split_inputs {
     #address-cells = <1>;
@@ -46,7 +46,7 @@ Roughly, `overlay` of the split-peripheral trackball should look like below.
   };
 };
 
-/* add rate limit processor on peripheral(s) overlay */
+/* Add the rate limit processor on peripheral(s) overlay */
 #include <input/processors/report_rate_limit.dtsi>
 
 &trackball_split {
