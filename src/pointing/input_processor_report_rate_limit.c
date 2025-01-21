@@ -37,6 +37,13 @@ static int limit_val(const struct device *dev, struct input_event *event,
     struct zip_rrl_data *data = dev->data;
     int64_t now = k_uptime_get();
 
+    // purge leftover delta, if last reported had not been left too long
+    if (now - data->last_rpt[code_idx] >= delay_ms * CONFIG_ZMK_INPUT_PROCESSOR_REPORT_RATE_LIMIT_CODES_MAX_LEN) {
+        data->rmds[code_idx] = 0;
+        data->syncs[code_idx] = false;
+    }
+
+    // accumulate delta, stop provessing
     if (now - data->last_rpt[code_idx] < delay_ms) {
         data->rmds[code_idx] += event->value;
         data->syncs[code_idx] |= event->sync;
@@ -46,6 +53,7 @@ static int limit_val(const struct device *dev, struct input_event *event,
         return ZMK_INPUT_PROC_STOP;
     }
 
+    // flush delta, continue provessing
     event->value += data->rmds[code_idx];
     event->sync |= data->syncs[code_idx];
     // LOG_DBG("c: %d v: %d r: %d", event->code, event->value, data->rmds[code_idx]);
