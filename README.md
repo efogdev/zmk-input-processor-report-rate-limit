@@ -51,6 +51,6 @@ Roughly, `overlay` of the split-peripheral trackball should look like below.
 
 &trackball_split {
   device = <&trackball>;
-  input-processors = <&zip_report_rate_limit 12>; // limit to 12ms, default is 8ms
+  input-processors = <&zip_report_rate_limit 16>; // limit to 16ms, default is 16ms
 };
 ```
