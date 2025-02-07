@@ -43,7 +43,7 @@ static int limit_val(const struct device *dev, struct input_event *event,
         data->syncs[code_idx] = false;
     }
 
-    // accumulate delta, stop provessing
+    // accumulate delta, stop processing
     if (now - data->last_rpt[code_idx] < delay_ms) {
         data->rmds[code_idx] += event->value;
         data->syncs[code_idx] |= event->sync;
@@ -53,7 +53,7 @@ static int limit_val(const struct device *dev, struct input_event *event,
         return ZMK_INPUT_PROC_STOP;
     }
 
-    // flush delta, continue provessing
+    // flush delta, continue processing
     event->value += data->rmds[code_idx];
     event->sync |= data->syncs[code_idx];
     // LOG_DBG("c: %d v: %d r: %d", event->code, event->value, data->rmds[code_idx]);
