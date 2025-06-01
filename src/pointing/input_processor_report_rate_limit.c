@@ -10,6 +10,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <drivers/input_processor.h>
+#include <zephyr/sys/util.h> // CLAMP
 
 #include <zephyr/logging/log.h>
 
@@ -45,7 +46,7 @@ static int limit_val(const struct device *dev, struct input_event *event,
 
     // accumulate delta, stop processing
     if (now - data->last_rpt[code_idx] < delay_ms) {
-        data->rmds[code_idx] += event->value;
+        data->rmds[code_idx] = CLAMP(data->rmds[code_idx] + event->value, INT32_MIN, INT32_MAX);
         data->syncs[code_idx] |= event->sync;
         event->value = 0;
         event->sync = false;
@@ -54,7 +55,7 @@ static int limit_val(const struct device *dev, struct input_event *event,
     }
 
     // flush delta, continue processing
-    event->value += data->rmds[code_idx];
+    event->value = CLAMP(event->value + data->rmds[code_idx], INT32_MIN, INT32_MAX);
     event->sync |= data->syncs[code_idx];
     // LOG_DBG("c: %d v: %d r: %d", event->code, event->value, data->rmds[code_idx]);
     data->rmds[code_idx] = 0;
