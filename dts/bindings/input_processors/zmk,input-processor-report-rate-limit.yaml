@@ -13,3 +13,5 @@ properties:
   codes:
     type: array
     required: true
+  limit-ble-only:
+    type: boolean

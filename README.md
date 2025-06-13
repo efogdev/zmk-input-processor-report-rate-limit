@@ -54,3 +54,12 @@ Roughly, `overlay` of the split-peripheral trackball should look like below.
   input-processors = <&zip_report_rate_limit 16>; // limit to 16ms, default is 16ms
 };
 ```
+
+If you want to temporary disabling rate limit while your shield is connecting to USB, it can be done with `limit-ble-only`. This option will only be enabled when both `CONFIG_ZMK_USB` and `CONFIG_ZMK_BLE` is on.
+
+```
+&zip_report_rate_limit {
+  limit-ble-only;
+}
+/* or, use predefined label `&zip_ble_report_rate_limit` */
+```

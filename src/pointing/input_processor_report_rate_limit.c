@@ -12,6 +12,15 @@
 #include <drivers/input_processor.h>
 #include <zephyr/sys/util.h> // CLAMP
 
+// define HAS_BLE_VIA_USB for shield has both BLE and USB
+#define HAS_BLE_VIA_USB (IS_ENABLED(CONFIG_ZMK_USB) && IS_ENABLED(CONFIG_ZMK_BLE))
+
+#if HAS_BLE_VIA_USB
+#include <zmk/endpoints.h>
+#include <zmk/endpoints_types.h>
+#include <zmk/events/endpoint_changed.h>
+#endif // HAS_BLE_VIA_USB
+
 #include <zephyr/logging/log.h>
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
@@ -20,15 +29,65 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 struct zip_rrl_config {
     uint8_t type;
+    bool limit_ble_only;
     size_t codes_len;
     uint16_t codes[];
 };
 
 struct zip_rrl_data {
+#if HAS_BLE_VIA_USB
+    bool active;
+#endif // HAS_BLE_VIA_USB
     int16_t rmds[CONFIG_ZMK_INPUT_PROCESSOR_REPORT_RATE_LIMIT_CODES_MAX_LEN];
     bool syncs[CONFIG_ZMK_INPUT_PROCESSOR_REPORT_RATE_LIMIT_CODES_MAX_LEN];
     int64_t last_rpt[CONFIG_ZMK_INPUT_PROCESSOR_REPORT_RATE_LIMIT_CODES_MAX_LEN];
 };
+
+static void zip_rrl_reset_rmds(const struct device *dev) {
+    struct zip_rrl_data *data = dev->data;
+    int64_t now = k_uptime_get();
+    for (int i = 0; i < CONFIG_ZMK_INPUT_PROCESSOR_REPORT_RATE_LIMIT_CODES_MAX_LEN; i++) {
+        data->rmds[i] = 0;
+        data->syncs[i] = false;
+        data->last_rpt[i] = now;
+    }
+}
+
+#if HAS_BLE_VIA_USB
+
+static void zip_rrl_set_active(const struct device *dev, bool active) {
+    LOG_DBG("set zip report rate limit to %s", active ? "active" : "inactive");
+    struct zip_rrl_data *data = dev->data;
+    data->active = active;
+    if (!active) {
+        zip_rrl_reset_rmds(dev);
+    }
+}
+
+#define GET_ZIP_RRL_DEV(node_id) DEVICE_DT_GET(node_id),
+
+static const struct device *zip_rrl_devs[] = {
+    DT_FOREACH_STATUS_OKAY(DT_DRV_COMPAT, GET_ZIP_RRL_DEV)
+};
+
+static int zip_rrl_profile_listener(const zmk_event_t *eh) {
+    struct zmk_endpoint_changed *ep_changed = as_zmk_endpoint_changed(eh);
+    if (ep_changed) {
+        struct zmk_endpoint_instance ep = zmk_endpoints_selected();
+        for (size_t i = 0; i < ARRAY_SIZE(zip_rrl_devs); i++) {
+            const struct zip_rrl_config *cfg = zip_rrl_devs[i]->config;
+            if (cfg->limit_ble_only) {
+                zip_rrl_set_active(zip_rrl_devs[i], ep.transport == ZMK_TRANSPORT_BLE);
+            }
+        }
+    }
+    return 0;
+}
+
+ZMK_LISTENER(zip_rrl_profile_listener, zip_rrl_profile_listener);
+ZMK_SUBSCRIPTION(zip_rrl_profile_listener, zmk_endpoint_changed);
+
+#endif // HAS_BLE_VIA_USB
 
 static int limit_val(const struct device *dev, struct input_event *event, 
                      int code_idx, uint32_t delay_ms,
@@ -69,6 +128,13 @@ static int zip_rrl_handle_event(const struct device *dev, struct input_event *ev
                                 uint32_t param1, uint32_t param2, 
                                 struct zmk_input_processor_state *state) {
 
+#if HAS_BLE_VIA_USB
+    struct zip_rrl_data *data = dev->data;
+    if (!data->active) {
+        return ZMK_INPUT_PROC_CONTINUE;
+    }
+#endif // HAS_BLE_VIA_USB
+
     const struct zip_rrl_config *cfg = dev->config;
     if (event->type != cfg->type) {
         return ZMK_INPUT_PROC_CONTINUE;
@@ -88,15 +154,11 @@ static struct zmk_input_processor_driver_api sy_driver_api = {
 };
 
 static int zip_rrl_init(const struct device *dev) {
-    // const struct zip_rrl_config *cfg = dev->config;
-    struct zip_rrl_data *data = dev->data;
+    zip_rrl_reset_rmds(dev);
 
-    int64_t now = k_uptime_get();
-    for (int i = 0; i < CONFIG_ZMK_INPUT_PROCESSOR_REPORT_RATE_LIMIT_CODES_MAX_LEN; i++) {
-        data->rmds[i] = 0;
-        data->syncs[i] = false;
-        data->last_rpt[i] = now;
-    }
+#if HAS_BLE_VIA_USB
+    zip_rrl_set_active(dev, true);
+#endif // HAS_BLE_VIA_USB
 
     return 0;
 }
@@ -108,6 +170,7 @@ static int zip_rrl_init(const struct device *dev) {
     static struct zip_rrl_data data_##n = {};                                                  \
     static struct zip_rrl_config config_##n = {                                                \
         .type = DT_INST_PROP_OR(n, type, INPUT_EV_REL),                                        \
+        .limit_ble_only = DT_INST_PROP(n, limit_ble_only),                                     \
         .codes_len = DT_INST_PROP_LEN(n, codes),                                               \
         .codes = DT_INST_PROP(n, codes),                                                       \
     };                                                                                         \
