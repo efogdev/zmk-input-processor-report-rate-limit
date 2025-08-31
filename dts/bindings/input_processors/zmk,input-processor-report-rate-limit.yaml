@@ -1,11 +1,9 @@
 # Copyright (c) 2024, The ZMK Contributors
 # SPDX-License-Identifier: MIT
 
-description: Input Processor for reduceing the rate of input reports
-
+description: Input Processor for limiting the rate of input reports
 compatible: "zmk,input-processor-report-rate-limit"
-
-include: ip_one_param.yaml
+include: ip_zero_param.yaml
 
 properties:
   type:

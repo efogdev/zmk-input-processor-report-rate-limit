@@ -26,6 +26,8 @@
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #include <zmk/keymap.h>
+#define MAX_LEN 3
+#define DELAY CONFIG_ZMK_INPUT_PROCESSOR_REPORT_RATE_LIMIT_DEFAULT
 
 struct zip_rrl_config {
     uint8_t type;
@@ -38,15 +40,15 @@ struct zip_rrl_data {
 #if HAS_BLE_VIA_USB
     bool active;
 #endif // HAS_BLE_VIA_USB
-    int16_t rmds[CONFIG_ZMK_INPUT_PROCESSOR_REPORT_RATE_LIMIT_CODES_MAX_LEN];
-    bool syncs[CONFIG_ZMK_INPUT_PROCESSOR_REPORT_RATE_LIMIT_CODES_MAX_LEN];
-    int64_t last_rpt[CONFIG_ZMK_INPUT_PROCESSOR_REPORT_RATE_LIMIT_CODES_MAX_LEN];
+    int16_t rmds[MAX_LEN];
+    bool syncs[MAX_LEN];
+    int64_t last_rpt[MAX_LEN];
 };
 
 static void zip_rrl_reset_rmds(const struct device *dev) {
     struct zip_rrl_data *data = dev->data;
-    int64_t now = k_uptime_get();
-    for (int i = 0; i < CONFIG_ZMK_INPUT_PROCESSOR_REPORT_RATE_LIMIT_CODES_MAX_LEN; i++) {
+    const int64_t now = k_uptime_get();
+    for (int i = 0; i < MAX_LEN; i++) {
         data->rmds[i] = 0;
         data->syncs[i] = false;
         data->last_rpt[i] = now;
@@ -71,7 +73,7 @@ static const struct device *zip_rrl_devs[] = {
 };
 
 static int zip_rrl_profile_listener(const zmk_event_t *eh) {
-    struct zmk_endpoint_changed *ep_changed = as_zmk_endpoint_changed(eh);
+    const struct zmk_endpoint_changed *ep_changed = as_zmk_endpoint_changed(eh);
     if (ep_changed) {
         struct zmk_endpoint_instance ep = zmk_endpoints_selected();
         for (size_t i = 0; i < ARRAY_SIZE(zip_rrl_devs); i++) {
@@ -89,16 +91,16 @@ ZMK_SUBSCRIPTION(zip_rrl_profile_listener, zmk_endpoint_changed);
 
 #endif // HAS_BLE_VIA_USB
 
-static int limit_val(const struct device *dev, struct input_event *event, 
-                     int code_idx, uint32_t delay_ms,
+static int limit_val(const struct device *dev, struct input_event *event,
+                     const int code_idx, const uint32_t delay_ms,
                      struct zmk_input_processor_state *state) {
 
     // const struct zip_rrl_config *cfg = dev->config;
     struct zip_rrl_data *data = dev->data;
-    int64_t now = k_uptime_get();
+    const int64_t now = k_uptime_get();
 
     // purge leftover delta, if last reported had not been left too long
-    if (now - data->last_rpt[code_idx] >= delay_ms * CONFIG_ZMK_INPUT_PROCESSOR_REPORT_RATE_LIMIT_CODES_MAX_LEN) {
+    if (now - data->last_rpt[code_idx] >= delay_ms * MAX_LEN) {
         data->rmds[code_idx] = 0;
         data->syncs[code_idx] = false;
     }
@@ -127,9 +129,8 @@ static int limit_val(const struct device *dev, struct input_event *event,
 static int zip_rrl_handle_event(const struct device *dev, struct input_event *event, 
                                 uint32_t param1, uint32_t param2, 
                                 struct zmk_input_processor_state *state) {
-
 #if HAS_BLE_VIA_USB
-    struct zip_rrl_data *data = dev->data;
+    const struct zip_rrl_data *data = dev->data;
     if (!data->active) {
         return ZMK_INPUT_PROC_CONTINUE;
     }
@@ -142,7 +143,7 @@ static int zip_rrl_handle_event(const struct device *dev, struct input_event *ev
 
     for (int i = 0; i < cfg->codes_len; i++) {
         if (cfg->codes[i] == event->code) {
-            return limit_val(dev, event, i, param1, state);
+            return limit_val(dev, event, i, DELAY, state);
         }
     }
 
@@ -165,8 +166,8 @@ static int zip_rrl_init(const struct device *dev) {
 
 #define RRL_INST(n)                                                                            \
     BUILD_ASSERT(DT_INST_PROP_LEN(n, codes)                                                    \
-                 <= CONFIG_ZMK_INPUT_PROCESSOR_REPORT_RATE_LIMIT_CODES_MAX_LEN,                \
-                 "Codes length > CONFIG_ZMK_INPUT_PROCESSOR_REPORT_RATE_LIMIT_CODES_MAX_LEN"); \
+                 <= MAX_LEN,                \
+                 "Codes length > MAX_LEN"); \
     static struct zip_rrl_data data_##n = {};                                                  \
     static struct zip_rrl_config config_##n = {                                                \
         .type = DT_INST_PROP_OR(n, type, INPUT_EV_REL),                                        \
