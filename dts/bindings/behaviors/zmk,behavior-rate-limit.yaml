@@ -1,0 +1,15 @@
+description: Set rate limit in runtime
+compatible: "zmk,behavior-rate-limit"
+include: one_param.yaml
+
+properties:
+  values-ms:
+    type: array
+    required: true
+  feedback-gpios:
+    type: phandle-array
+  feedback-extra-gpios:
+    type: phandle-array
+  feedback-duration:
+    type: int
+    default: 0

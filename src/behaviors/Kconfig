@@ -1,0 +1,10 @@
+# Copyright (c) 2023 The ZMK Contributors
+# SPDX-License-Identifier: MIT
+
+if ZMK_POINTING
+
+config ZIP_RATE_LIMIT_MAX_DEVICES
+  int "Maximum rate limit behaviors"
+  default 3
+
+endif # ZMK_POINTER_2S_MIXER

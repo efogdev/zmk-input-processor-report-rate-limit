@@ -11,6 +11,7 @@
 #include <zephyr/device.h>
 #include <drivers/input_processor.h>
 #include <zephyr/sys/util.h> // CLAMP
+#include <drivers/behavior_rate_limit_runtime.h>
 
 // define HAS_BLE_VIA_USB for shield has both BLE and USB
 #define HAS_BLE_VIA_USB (IS_ENABLED(CONFIG_ZMK_USB) && IS_ENABLED(CONFIG_ZMK_BLE))
@@ -27,7 +28,8 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #include <zmk/keymap.h>
 #define MAX_LEN 3
-#define DELAY CONFIG_ZMK_INPUT_PROCESSOR_REPORT_RATE_LIMIT_DEFAULT
+
+static uint8_t g_delay = CONFIG_ZMK_INPUT_PROCESSOR_REPORT_RATE_LIMIT_DEFAULT;
 
 struct zip_rrl_config {
     uint8_t type;
@@ -143,7 +145,7 @@ static int zip_rrl_handle_event(const struct device *dev, struct input_event *ev
 
     for (int i = 0; i < cfg->codes_len; i++) {
         if (cfg->codes[i] == event->code) {
-            return limit_val(dev, event, i, DELAY, state);
+            return limit_val(dev, event, i, g_delay, state);
         }
     }
 
@@ -162,6 +164,18 @@ static int zip_rrl_init(const struct device *dev) {
 #endif // HAS_BLE_VIA_USB
 
     return 0;
+}
+
+void behavior_rate_limit_runtime_init() {
+    // ToDo
+}
+
+uint8_t behavior_rate_limit_get_current_ms() {
+    return g_delay;
+}
+
+void behavior_rate_limit_set_current_ms(const uint8_t value) {
+    g_delay = value;
 }
 
 #define RRL_INST(n)                                                                            \

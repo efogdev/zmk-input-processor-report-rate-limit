@@ -4,12 +4,11 @@
 if ZMK_POINTING
 
 config ZMK_INPUT_PROCESSOR_REPORT_RATE_LIMIT
-    bool "Rate limiter"
-    default y
-    depends on DT_HAS_ZMK_INPUT_PROCESSOR_REPORT_RATE_LIMIT_ENABLED
+bool "Pointer rate limiter"
+default y
 
 config ZMK_INPUT_PROCESSOR_REPORT_RATE_LIMIT_DEFAULT
-    int "Default limit (delay between transmissions, msec)"
-    default 8
+int "Rate limiter default sync window, msec"
+default 8
 
 endif

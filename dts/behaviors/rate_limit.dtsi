@@ -1,0 +1,10 @@
+/ {
+	behaviors {
+		rrl: rrl {
+			compatible = "zmk,behavior-rate-limit";
+			#binding-cells = <1>;
+			display-name = "Polling rate";
+			values-ms = <3 6 8>;
+		};
+	};
+};
