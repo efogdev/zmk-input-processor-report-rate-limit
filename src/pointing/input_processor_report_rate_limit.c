@@ -16,6 +16,13 @@
 // define HAS_BLE_VIA_USB for shield has both BLE and USB
 #define HAS_BLE_VIA_USB (IS_ENABLED(CONFIG_ZMK_USB) && IS_ENABLED(CONFIG_ZMK_BLE))
 
+#if IS_ENABLED(CONFIG_SETTINGS)
+#ifndef CONFIG_SETTINGS_RUNTIME
+#define CONFIG_SETTINGS_RUNTIME true
+#endif
+#include <zephyr/settings/settings.h>
+#endif
+
 #if HAS_BLE_VIA_USB
 #include <zmk/endpoints.h>
 #include <zmk/endpoints_types.h>
@@ -30,6 +37,11 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define MAX_LEN 3
 
 static uint8_t g_delay = CONFIG_ZMK_INPUT_PROCESSOR_REPORT_RATE_LIMIT_DEFAULT;
+
+#if IS_ENABLED(CONFIG_SETTINGS)
+struct k_work_delayable zip_rrl_save_work;
+static void zip_rrl_save_work_cb(struct k_work *work);
+#endif
 
 struct zip_rrl_config {
     uint8_t type;
@@ -58,8 +70,7 @@ static void zip_rrl_reset_rmds(const struct device *dev) {
 }
 
 #if HAS_BLE_VIA_USB
-
-static void zip_rrl_set_active(const struct device *dev, bool active) {
+static void zip_rrl_set_active(const struct device *dev, const bool active) {
     LOG_DBG("set zip report rate limit to %s", active ? "active" : "inactive");
     struct zip_rrl_data *data = dev->data;
     data->active = active;
@@ -77,7 +88,7 @@ static const struct device *zip_rrl_devs[] = {
 static int zip_rrl_profile_listener(const zmk_event_t *eh) {
     const struct zmk_endpoint_changed *ep_changed = as_zmk_endpoint_changed(eh);
     if (ep_changed) {
-        struct zmk_endpoint_instance ep = zmk_endpoints_selected();
+        const struct zmk_endpoint_instance ep = zmk_endpoints_selected();
         for (size_t i = 0; i < ARRAY_SIZE(zip_rrl_devs); i++) {
             const struct zip_rrl_config *cfg = zip_rrl_devs[i]->config;
             if (cfg->limit_ble_only) {
@@ -90,37 +101,32 @@ static int zip_rrl_profile_listener(const zmk_event_t *eh) {
 
 ZMK_LISTENER(zip_rrl_profile_listener, zip_rrl_profile_listener);
 ZMK_SUBSCRIPTION(zip_rrl_profile_listener, zmk_endpoint_changed);
-
 #endif // HAS_BLE_VIA_USB
 
 static int limit_val(const struct device *dev, struct input_event *event,
                      const int code_idx, const uint32_t delay_ms,
                      struct zmk_input_processor_state *state) {
-
-    // const struct zip_rrl_config *cfg = dev->config;
     struct zip_rrl_data *data = dev->data;
     const int64_t now = k_uptime_get();
 
-    // purge leftover delta, if last reported had not been left too long
     if (now - data->last_rpt[code_idx] >= delay_ms * MAX_LEN) {
         data->rmds[code_idx] = 0;
         data->syncs[code_idx] = false;
     }
 
-    // accumulate delta, stop processing
     if (now - data->last_rpt[code_idx] < delay_ms) {
         data->rmds[code_idx] = CLAMP(data->rmds[code_idx] + event->value, INT32_MIN, INT32_MAX);
         data->syncs[code_idx] |= event->sync;
         event->value = 0;
         event->sync = false;
-        // LOG_DBG("rate limited");
+        LOG_DBG("Accumulated a value, rate limited");
         return ZMK_INPUT_PROC_STOP;
     }
 
-    // flush delta, continue processing
+
     event->value = CLAMP(event->value + data->rmds[code_idx], INT32_MIN, INT32_MAX);
     event->sync |= data->syncs[code_idx];
-    // LOG_DBG("c: %d v: %d r: %d", event->code, event->value, data->rmds[code_idx]);
+
     data->rmds[code_idx] = 0;
     data->syncs[code_idx] = false;
     data->last_rpt[code_idx] = now;
@@ -163,11 +169,30 @@ static int zip_rrl_init(const struct device *dev) {
     zip_rrl_set_active(dev, true);
 #endif // HAS_BLE_VIA_USB
 
+    behavior_rate_limit_runtime_init();
+    zip_rrl_sens_driver_init();
     return 0;
 }
 
+#if IS_ENABLED(CONFIG_SETTINGS)
+static void zip_rrl_save_work_cb(struct k_work *work) {
+    const int err = settings_save_one(ZIP_RRL_SETTINGS_PREFIX, &g_delay, sizeof(g_delay));
+    if (err < 0) {
+        LOG_ERR("Failed to save rate limit %d", err);
+    } else {
+        LOG_DBG("Rate limit saved");
+    }
+}
+
+static void zip_rrl_save() {
+    k_work_reschedule(&zip_rrl_save_work, K_MSEC(CONFIG_ZIP_RRL_SETTINGS_SAVE_DELAY));
+}
+#endif
+
 void behavior_rate_limit_runtime_init() {
-    // ToDo
+#if IS_ENABLED(CONFIG_SETTINGS)
+    k_work_init_delayable(&zip_rrl_save_work, zip_rrl_save_work_cb);
+#endif
 }
 
 uint8_t behavior_rate_limit_get_current_ms() {
@@ -176,6 +201,10 @@ uint8_t behavior_rate_limit_get_current_ms() {
 
 void behavior_rate_limit_set_current_ms(const uint8_t value) {
     g_delay = value;
+
+#if IS_ENABLED(CONFIG_SETTINGS)
+    zip_rrl_save();
+#endif
 }
 
 #define RRL_INST(n)                                                                            \

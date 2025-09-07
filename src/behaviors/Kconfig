@@ -7,4 +7,8 @@ config ZIP_RATE_LIMIT_MAX_DEVICES
   int "Maximum rate limit behaviors"
   default 3
 
+config ZIP_RATE_LIMIT_MAX_ARR_VALUES
+  int "Maximum items in dts arrays"
+  default 8
+
 endif # ZMK_POINTER_2S_MIXER

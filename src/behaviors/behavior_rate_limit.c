@@ -24,12 +24,15 @@ struct behavior_rate_limit_config {
     const struct gpio_dt_spec feedback_extra_gpios;
     const uint32_t feedback_duration;
     const uint8_t values_count;
-    const int values_ms[];
+    const int values_ms[CONFIG_ZIP_RATE_LIMIT_MAX_ARR_VALUES];
+    const uint8_t feedback_wrap_pattern_len;
+    const int feedback_wrap_pattern[CONFIG_ZIP_RATE_LIMIT_MAX_ARR_VALUES];
 };
 
 struct behavior_rate_limit_data {
     const struct device *dev;
     struct k_work_delayable feedback_off_work;
+    int previous_feedback_extra_state;
 };
 
 #if IS_ENABLED(CONFIG_ZMK_BEHAVIOR_METADATA)
@@ -86,6 +89,7 @@ static int on_zip_rrl_binding_pressed(struct zmk_behavior_binding *binding, stru
 
     if (cfg->feedback_duration > 0 && cfg->feedback_gpios.port != NULL) {
         if (cfg->feedback_extra_gpios.port != NULL) {
+            data->previous_feedback_extra_state = gpio_pin_get_dt(&cfg->feedback_extra_gpios);
             gpio_pin_set_dt(&cfg->feedback_extra_gpios, 1);
         }
 
@@ -106,14 +110,14 @@ static void feedback_off_work_cb(struct k_work *work) {
     const struct behavior_rate_limit_config *config = dev->config;
 
     if (config->feedback_extra_gpios.port != NULL) {
-        gpio_pin_set_dt(&config->feedback_extra_gpios, 0);
+        gpio_pin_set_dt(&config->feedback_extra_gpios, data->previous_feedback_extra_state);
     }
 
     if (config->feedback_gpios.port != NULL) {
         gpio_pin_set_dt(&config->feedback_gpios, 0);
     }
 
-    LOG_DBG("Feedback turned off");
+    LOG_DBG("Feedback turned off, extra GPIOs restored to previous state");
 }
 
 void zip_rrl_sens_driver_init() {
@@ -135,6 +139,7 @@ void zip_rrl_sens_driver_init() {
 static int behavior_rate_limit_init(const struct device *dev) {
     const struct behavior_rate_limit_config *cfg = dev->config;
     struct behavior_rate_limit_data *data = dev->data;
+    data->previous_feedback_extra_state = 0;
     
     if (cfg->feedback_gpios.port != NULL) {
         if (gpio_pin_configure_dt(&cfg->feedback_gpios, GPIO_OUTPUT) != 0) {
@@ -176,8 +181,10 @@ static const struct behavior_driver_api behavior_rate_limit_driver_api = {
         .feedback_gpios = GPIO_DT_SPEC_INST_GET_OR(n, feedback_gpios, { .port = NULL }),                 \
         .feedback_extra_gpios = GPIO_DT_SPEC_INST_GET_OR(n, feedback_extra_gpios, { .port = NULL }),     \
         .feedback_duration = DT_INST_PROP_OR(n, feedback_duration, 0),                                   \
-        .values_count = DT_INST_PROP_LEN(n, values_ms),                                             \
+        .values_count = DT_INST_PROP_LEN(n, values_ms),                                                  \
         .values_ms = DT_INST_PROP_OR(n, values_ms, { 0 }}),                                              \
+        .feedback_wrap_pattern_len = DT_INST_PROP_LEN_OR(n, feedback_wrap_pattern, 0),                   \
+        .feedback_wrap_pattern = DT_INST_PROP_OR(n, feedback_wrap_pattern, { 0 }}),                      \
     };                                                                                                   \
     BEHAVIOR_DT_INST_DEFINE(n, behavior_rate_limit_init, NULL, &behavior_rate_limit_data_##n,            \
         &behavior_rate_limit_config_##n, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT, &behavior_rate_limit_driver_api);
