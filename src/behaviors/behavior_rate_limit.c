@@ -32,7 +32,10 @@ struct behavior_rate_limit_config {
 struct behavior_rate_limit_data {
     const struct device *dev;
     struct k_work_delayable feedback_off_work;
+    struct k_work_delayable feedback_pattern_work;
     int previous_feedback_extra_state;
+    uint8_t current_pattern_index;
+    bool pattern_active;
 };
 
 #if IS_ENABLED(CONFIG_ZMK_BEHAVIOR_METADATA)
@@ -64,6 +67,7 @@ static int on_zip_rrl_binding_pressed(struct zmk_behavior_binding *binding, stru
     const struct behavior_rate_limit_config *cfg = dev->config;
     struct behavior_rate_limit_data *data = dev->data;
 
+    bool wrapped = false;
     if (cfg->values_count > 0) {
         const uint8_t current_ms = behavior_rate_limit_get_current_ms();
         int current_index = -1;
@@ -78,6 +82,9 @@ static int on_zip_rrl_binding_pressed(struct zmk_behavior_binding *binding, stru
         int next_index = (current_index + 1) % cfg->values_count;
         if (current_index == -1) {
             next_index = 0;
+        } else if (next_index == 0) {
+            wrapped = true;
+            LOG_DBG("Rate limit wrapped around");
         }
 
         const uint8_t next_ms = cfg->values_ms[next_index];
@@ -93,10 +100,29 @@ static int on_zip_rrl_binding_pressed(struct zmk_behavior_binding *binding, stru
             gpio_pin_set_dt(&cfg->feedback_extra_gpios, 1);
         }
 
-        if (gpio_pin_set_dt(&cfg->feedback_gpios, 1) == 0) {
-            k_work_reschedule(&data->feedback_off_work, K_MSEC(cfg->feedback_duration));
+        if (wrapped && cfg->feedback_wrap_pattern_len > 0) {
+            data->pattern_active = true;
+            data->current_pattern_index = 0;
+            
+            if (cfg->feedback_wrap_pattern_len > 0) {
+                const int pattern_duration = cfg->feedback_wrap_pattern[0];
+                
+                if (gpio_pin_set_dt(&cfg->feedback_gpios, 1) == 0) {
+                    data->current_pattern_index = 1;
+                    k_work_reschedule(&data->feedback_pattern_work, K_MSEC(pattern_duration));
+                    LOG_DBG("Starting feedback wrap pattern: duration=%d",
+                            pattern_duration);
+                } else {
+                    LOG_ERR("Failed to enable the feedback pattern");
+                    data->pattern_active = false;
+                }
+            }
         } else {
-            LOG_ERR("Failed to enable the feedback");
+            if (gpio_pin_set_dt(&cfg->feedback_gpios, 1) == 0) {
+                k_work_reschedule(&data->feedback_off_work, K_MSEC(cfg->feedback_duration));
+            } else {
+                LOG_ERR("Failed to enable the feedback");
+            }
         }
     }
 
@@ -109,6 +135,15 @@ static void feedback_off_work_cb(struct k_work *work) {
     const struct device *dev = data->dev;
     const struct behavior_rate_limit_config *config = dev->config;
 
+    if (data->pattern_active) {
+        if (config->feedback_gpios.port != NULL) {
+            gpio_pin_set_dt(&config->feedback_gpios, 0);
+        }
+
+        LOG_DBG("Feedback pattern step completed");
+        return;
+    }
+
     if (config->feedback_extra_gpios.port != NULL) {
         gpio_pin_set_dt(&config->feedback_extra_gpios, data->previous_feedback_extra_state);
     }
@@ -118,6 +153,45 @@ static void feedback_off_work_cb(struct k_work *work) {
     }
 
     LOG_DBG("Feedback turned off, extra GPIOs restored to previous state");
+}
+
+static void feedback_pattern_work_cb(struct k_work *work) {
+    struct k_work_delayable *dwork = k_work_delayable_from_work(work);
+    struct behavior_rate_limit_data *data = CONTAINER_OF(dwork, struct behavior_rate_limit_data, feedback_pattern_work);
+    const struct device *dev = data->dev;
+    const struct behavior_rate_limit_config *config = dev->config;
+
+    if (!data->pattern_active) {
+        return;
+    }
+
+    if (data->current_pattern_index >= config->feedback_wrap_pattern_len) {
+        data->pattern_active = false;
+        
+        if (config->feedback_extra_gpios.port != NULL) {
+            gpio_pin_set_dt(&config->feedback_extra_gpios, data->previous_feedback_extra_state);
+        }
+        
+        if (config->feedback_gpios.port != NULL) {
+            gpio_pin_set_dt(&config->feedback_gpios, 0);
+        }
+        
+        LOG_DBG("Feedback pattern completed");
+        return;
+    }
+
+    const int pattern_duration = config->feedback_wrap_pattern[data->current_pattern_index];
+    const int pin_state = (data->current_pattern_index % 2 == 1) ? 0 : 1;
+    
+    if (config->feedback_gpios.port != NULL) {
+        gpio_pin_set_dt(&config->feedback_gpios, pin_state);
+    }
+    
+    LOG_DBG("Feedback pattern step %d: state=%d, duration=%d",
+            data->current_pattern_index, pin_state, pattern_duration);
+    
+    data->current_pattern_index++;
+    k_work_reschedule(&data->feedback_pattern_work, K_MSEC(pattern_duration));
 }
 
 void zip_rrl_sens_driver_init() {
@@ -140,6 +214,8 @@ static int behavior_rate_limit_init(const struct device *dev) {
     const struct behavior_rate_limit_config *cfg = dev->config;
     struct behavior_rate_limit_data *data = dev->data;
     data->previous_feedback_extra_state = 0;
+    data->pattern_active = false;
+    data->current_pattern_index = 0;
     
     if (cfg->feedback_gpios.port != NULL) {
         if (gpio_pin_configure_dt(&cfg->feedback_gpios, GPIO_OUTPUT) != 0) {
@@ -149,6 +225,7 @@ static int behavior_rate_limit_init(const struct device *dev) {
         }
 
         k_work_init_delayable(&data->feedback_off_work, feedback_off_work_cb);
+        k_work_init_delayable(&data->feedback_pattern_work, feedback_pattern_work_cb);
     } else {
         LOG_DBG("No feedback set up for rate limit cycling");
     }

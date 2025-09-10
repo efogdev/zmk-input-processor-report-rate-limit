@@ -5,6 +5,7 @@
 			#binding-cells = <1>;
 			display-name = "Polling rate";
 			values-ms = <2 3 5 6 8>;
+			feedback-wrap-pattern = <0 10 65 25 65 25 65>;
 		};
 	};
 };
